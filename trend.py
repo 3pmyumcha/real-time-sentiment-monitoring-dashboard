@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Real-time trend detection module (Member 3).
+"""Real-time trending-term detection module.
 
-Data source: the clean_posts table in data/app.db (written by Member 2's pipeline).
-Output target: the trending_keywords table (read by Member 5's dashboard).
+Data source: the clean_posts table in data/app.db.
+Output target: the trending_keywords table used by the dashboard.
 
 Core logic:
 1. Use the newest created_at in clean_posts as "now", so the detection does not
@@ -15,20 +15,16 @@ Core logic:
    then bulk insert the new results.
 5. Repeat every 60 seconds.
 
-Member 5 (PM) quality fixes, 11/15/2026:
-* a standard stop-word list is applied to tokens (the 18-word list in Member
-  2's cleaner let `will / give / though / show / hn` top the chart);
+Quality controls:
+* a standard stop-word list is applied to tokens;
 * a minimum 1 h frequency threshold removes one-off hapax words. It is NOT
   relaxed to 1: when the sample is too small the chart honestly shows fewer
   keywords instead of padding it with noise;
-* the baseline is RATE-NORMALISED. Member 3 divided a 1-hour count by a
-  23-hour count, so every previously unseen word automatically scored 1.0
-  and outranked words that were genuinely being discussed repeatedly. The
-  default now compares like-for-like hourly rates. Set
-  CS5481_BURST_FORMULA=original to reproduce Member 3's exact formula;
+* the baseline is rate-normalised so current frequency is compared with an
+  hourly historical rate. Set BURST_FORMULA=original to reproduce the raw
+  1-hour / 24-hour ratio;
 * ties are broken by real frequency, then alphabetically;
-* recent_count / baseline_count are persisted: the brief explicitly asks
-  Member 3 for "hot keyword frequency data", not just a ratio.
+* recent_count / baseline_count are persisted for a clear frequency breakdown.
 """
 
 import json
@@ -74,21 +70,16 @@ def find_db_path():
     return None
 
 
-# Member 5 (PM) integration: an explicit shared path wins, so the detector
-# never accidentally picks a stale app.db from the reference packages folder.
-DB_PATH = Path(os.environ["CS5481_DB"]) if os.environ.get("CS5481_DB") else find_db_path()
+DB_PATH = Path(os.environ["APP_DB"]) if os.environ.get("APP_DB") else find_db_path()
 
 RECENT_SECONDS = 3600          # window of the last 1 hour
 BASELINE_SECONDS = 86400       # window of the past 24 hours
 TOP_N = 20                     # keep the top 20 trending words
 LOOP_INTERVAL = 60             # run a detection cycle every 60 seconds
 
-# PM quality gate. Override with CS5481_MIN_RECENT_COUNT (default 2 because the
-# delivered 1 h window only holds ~150 tokens; raise it as data accumulates).
-MIN_RECENT_COUNT = max(1, int(os.environ.get("CS5481_MIN_RECENT_COUNT", "2")))
-LOW_SAMPLE_BELOW = max(1, int(os.environ.get("CS5481_MIN_KEYWORDS", "8")))
-# "rate" = compare hourly rates (default); "original" = Member 3's raw ratio.
-BURST_FORMULA = os.environ.get("CS5481_BURST_FORMULA", "rate").strip().lower()
+MIN_RECENT_COUNT = max(1, int(os.environ.get("MIN_RECENT_COUNT", "2")))
+LOW_SAMPLE_BELOW = max(1, int(os.environ.get("MIN_KEYWORDS", "8")))
+BURST_FORMULA = os.environ.get("BURST_FORMULA", "rate").strip().lower()
 # Filled by detect_trending() each cycle; surfaced by the dashboard.
 LAST_CYCLE_INFO = {"effective_min": MIN_RECENT_COUNT, "formula": BURST_FORMULA,
                    "n_candidates": 0, "n_recent_tokens": 0,
@@ -107,8 +98,8 @@ def connect_db():
 
     timeout=5 means waiting up to 5 seconds for a write lock;
     busy_timeout=5000 (milliseconds) is SQLite's native equivalent.
-    Together they avoid a "database is locked" error while Member 2's
-    pipeline writes to the same database.
+    Together they avoid a "database is locked" error while pipeline
+    components write to the same database.
     """
     conn = sqlite3.connect(str(DB_PATH), timeout=5)
     conn.execute("PRAGMA busy_timeout=5000")
@@ -116,12 +107,7 @@ def connect_db():
 
 
 def ensure_trending_table(conn):
-    """Create/upgrade the result table, so the dashboard can read it directly.
-
-    Member 3's original DDL has 3 columns. The PM fix adds the raw frequency
-    counts (the brief asks for hot-keyword frequency data). ALTER TABLE keeps
-    existing databases working without a rebuild.
-    """
+    """Create or upgrade the trending-keyword result table."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS trending_keywords (
@@ -171,7 +157,7 @@ def parse_utc(text):
 def iter_words(tokens_json, title_clean, text_clean):
     """Yield the words of a single post that participate in counting.
 
-    Prefer Member 2's cleaned tokens column (JSON array, already lowercased
+    Prefer the cleaned tokens column (JSON array, already lowercased
     and stop-word filtered). If tokens are empty or unparsable, fall back to
     splitting the concatenated title and body with a regex.
     """
@@ -216,13 +202,12 @@ def count_window(conn, start_iso, end_iso, include_end=True):
 def detect_trending(conn):
     """Return [(keyword, burst_score, recent_count, baseline_count), ...], top 20.
 
-    Burst formula is Member 3's original one. The PM gate only decides which
-    candidates are allowed to compete and how ties are broken.
+    The original burst formula is available as an option. The quality gate
+    only decides which candidates are allowed to compete and how ties are broken.
     """
     try:
         latest = get_latest_created_at(conn)
     except sqlite3.OperationalError as exc:
-        # clean_posts does not exist yet (Member 2's pipeline has not run), not an error
         print("[Trend] No data yet, waiting... ({})".format(exc))
         return []
 
@@ -261,7 +246,7 @@ def detect_trending(conn):
         for word, count in recent_counter.items()
     ]
 
-    # PM quality gate: keep only words repeated in the last hour. No relaxation
+    # Keep only words repeated in the last hour. No relaxation
     # to 1 -- a short but honest list beats a padded, meaningless one.
     eligible = [item for item in scored if item[2] >= MIN_RECENT_COUNT]
 

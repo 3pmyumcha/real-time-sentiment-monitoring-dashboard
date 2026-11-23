@@ -3,8 +3,7 @@ import html
 import sys
 from pathlib import Path
 
-# Member 5 (PM) integration: use the group-wide stop list so cleaning and
-# Member 3's word counting agree. Inline fallback keeps this module standalone.
+# Use the shared stop list so cleaning and trend counting agree.
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))

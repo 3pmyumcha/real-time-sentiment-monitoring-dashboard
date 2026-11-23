@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-# Member 5 (PM) integration: one canonical DB for the whole team.
-DB_PATH = Path(os.environ.get('CS5481_DB')
+# Use one canonical database for the project pipeline.
+DB_PATH = Path(os.environ.get('APP_DB')
                or (Path(__file__).resolve().parents[2] / 'data' / 'app.db'))
 SCHEMA_PATH = Path(__file__).parent / 'schema.sql'
 
@@ -55,15 +55,14 @@ def save_posts(raw_rows: list, clean_results: list):
 
 def get_recent_posts(hours=24):
     """
-    给 3 号（趋势检测）用：获取最近 N 小时的帖子，用于词频统计。
+    用于趋势检测：获取最近 N 小时的帖子，用于词频统计。
     返回：list[dict]，包含 post_id, title_clean, tokens, created_at
     注意：tokens 已经自动帮你从 JSON 字符串转成了 Python 列表。
 
-    Member 5 (PM) fix: anchor "now" on MAX(clean_posts.created_at), NOT on
+    Data clock fix: anchor "now" on MAX(clean_posts.created_at), NOT on
     datetime('now'). The delivered DB is a static snapshot whose newest post
-    is hours older than the machine clock, so the original wall-clock query
-    returned ZERO rows. This matches Member 3's own detector, which already
-    uses MAX(created_at) as its baseline.
+    is older than the machine clock, so the original wall-clock query
+    returned ZERO rows. The project uses MAX(created_at) as its baseline.
     """
     conn = get_conn()
     try:

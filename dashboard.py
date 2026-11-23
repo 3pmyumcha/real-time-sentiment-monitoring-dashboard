@@ -1,13 +1,10 @@
-"""CS5481 Topic 4 - Member 5 deliverable: auto-refreshing monitoring dashboard.
+"""Real-time sentiment and trend monitoring dashboard.
 
 Run:  python -m streamlit run dashboard.py
 
-READS (never writes) the shared SQLite DB data/app.db produced by Members 1-4:
-    raw_posts, clean_posts                 <- M1 / M2
-    trending_keywords                      <- M3
-    sentiment_results, sentiment_trends    <- M4
-Membership-5-owned history lives in a separate file (data/member5_history.db),
-so this page cannot compete with teammates for SQLite's single writer lock.
+Reads the shared SQLite DB data/app.db for posts, trends, and sentiment.
+Historical snapshots live in a separate file (data/history.db), so the
+dashboard cannot contend with the pipeline for the single SQLite writer lock.
 
 Auto-refresh uses st.fragment(run_every=N): only the chart region re-executes,
 so sidebar filters and tab selection survive each tick.
@@ -36,7 +33,7 @@ from text_quality import filter_tokens
 ROOT = Path(__file__).resolve().parent
 
 st.set_page_config(
-    page_title="CS5481 | AI Industry Sentiment & Trend Monitor",
+    page_title="AI Industry Sentiment & Trend Monitor",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -111,7 +108,7 @@ def wordcloud_figure(df: pd.DataFrame, max_words: int = 30,
                      height: int = 400) -> go.Figure:
     """Dependency-free word cloud: Plotly text on an R2 low-discrepancy layout.
 
-    Font size encodes Member 3's burst_score. Avoids the `wordcloud` C-extension
+    Font size encodes the burst_score. Avoids the `wordcloud` C-extension
     package (font problems on Windows) and stays interactive in the browser.
     """
     if df.empty:
@@ -175,7 +172,7 @@ def wordcloud_figure(df: pd.DataFrame, max_words: int = 30,
 def recent_token_counts(cutoff_1h: str) -> Counter:
     """Supplementary view: real 1 h term frequency from clean_posts.tokens.
 
-    This is computed by the dashboard for display only. It is NOT Member 3's
+    This is computed by the dashboard for display only. It is NOT the
     burst_score and must not be presented as their algorithm's output.
     """
     rows = q("SELECT tokens FROM clean_posts WHERE created_at >= ?", (cutoff_1h,))
@@ -216,18 +213,19 @@ with st.sidebar:
 
     entity_options = sorted(config.TRACKED_ENTITIES.keys())
     selected_entities = st.multiselect("Tracked entities", entity_options,
-                                       default=entity_options)
+                                       default=entity_options,
+                                       key="tracked_entities_selection")
     st.caption("Entities and aliases are defined once in `entity_registry.py`.")
 
     with st.expander("Manage entities", expanded=False):
         current_entities = (
-            dict(entity_registry.LEGACY_ENTITIES)
-            if entity_registry.PROFILE != "member"
+            dict(entity_registry.DEFAULT_ENTITIES)
+            if entity_registry.PROFILE != "default"
             else dict(entity_registry.TRACKED_ENTITIES)
         )
         st.caption(
             "Changes are saved to `data/entity_overrides.json` and applied to "
-            "the member profile."
+            "the default profile."
         )
 
         add_name = st.text_input("Entity name", key="add_entity_name",
@@ -251,9 +249,9 @@ with st.sidebar:
             else:
                 current_entities[name] = aliases
                 entity_registry.save_custom_entities(current_entities)
-                entity_registry.PROFILE = "member"
+                entity_registry.PROFILE = "default"
                 entity_registry.TRACKED_ENTITIES = dict(current_entities)
-                config.ENTITY_PROFILE = "member"
+                config.ENTITY_PROFILE = "default"
                 config.TRACKED_ENTITIES = dict(current_entities)
                 st.success(f"Saved {name}. Re-analyze the database to generate data.")
                 st.rerun()
@@ -275,20 +273,20 @@ with st.sidebar:
                     active_entities = dict(current_entities)
                 else:
                     entity_registry.reset_custom_entities()
-                    active_entities = dict(entity_registry.LEGACY_ENTITIES)
-                entity_registry.PROFILE = "member"
+                    active_entities = dict(entity_registry.DEFAULT_ENTITIES)
+                entity_registry.PROFILE = "default"
                 entity_registry.TRACKED_ENTITIES = dict(active_entities)
-                config.ENTITY_PROFILE = "member"
+                config.ENTITY_PROFILE = "default"
                 config.TRACKED_ENTITIES = dict(active_entities)
                 st.success("Entity configuration updated.")
                 st.rerun()
         with col_reset:
             if st.button("Restore defaults", width="stretch"):
                 entity_registry.reset_custom_entities()
-                active_entities = dict(entity_registry.LEGACY_ENTITIES)
-                entity_registry.PROFILE = "member"
+                active_entities = dict(entity_registry.DEFAULT_ENTITIES)
+                entity_registry.PROFILE = "default"
                 entity_registry.TRACKED_ENTITIES = dict(active_entities)
-                config.ENTITY_PROFILE = "member"
+                config.ENTITY_PROFILE = "default"
                 config.TRACKED_ENTITIES = dict(active_entities)
                 st.success("Restored the shipped entity set.")
                 st.rerun()
@@ -296,8 +294,8 @@ with st.sidebar:
         if st.button("Apply and re-analyze entities", width="stretch"):
             with st.spinner("Re-analyzing cleaned posts with current entities…"):
                 env = os.environ.copy()
-                env["CS5481_ENTITY_PROFILE"] = "member"
-                env["CS5481_DB"] = str(db.db_path())
+                env["ENTITY_PROFILE"] = "default"
+                env["APP_DB"] = str(db.db_path())
                 res = subprocess.run(
                     [sys.executable, str(ROOT / "run_pipeline.py"),
                      "--offline"],
@@ -352,21 +350,21 @@ def render_live():
     if not db.db_path().exists():
         st.info("### Shared database not found\n\n"
                 "Run `python run_pipeline.py --once` in the project root, "
-                "or set `CS5481_DB` to point at `data/app.db`.", icon="ℹ️")
+                "or set `APP_DB` to point at `data/app.db`.", icon="ℹ️")
         return
 
-    db.record_snapshot()          # PM-owned history; no write to the shared DB
+    db.record_snapshot()
 
     clock = db.data_clock()
     cutoff = db.iso_cutoff(window_hours)
     cutoff_1h = db.iso_cutoff(1)
     ent_sql, ent_params = in_clause(selected_entities)
 
-    # ---- Member 3 --------------------------------------------------------
+    # ---- Trend detection ------------------------------------------------
     trend_stamp = q("SELECT MAX(updated_at) s FROM trending_keywords")
     stamp = (float(trend_stamp["s"].iloc[0])
              if not trend_stamp.empty and pd.notna(trend_stamp["s"].iloc[0]) else None)
-    # Member 3 now persists raw frequencies. Fall back to the dashboard's own
+    # Raw frequencies are persisted for trend snapshots. Fall back to the dashboard's own
     # counter when reading an older 3-column snapshot.
     has_freq = {"recent_count", "baseline_count"} <= set(
         db.table_columns("trending_keywords"))
@@ -383,7 +381,7 @@ def render_live():
             else trends["keyword"].map(lambda k: tokens_1h.get(k, 0)))
     n_trends_all = db.scalar("SELECT COUNT(*) FROM trending_keywords", default=0) or 0
 
-    # ---- Member 1 + 2 ----------------------------------------------------
+    # ---- Ingestion and cleaning -----------------------------------------
     volume = q(
         "SELECT substr(c.created_at,1,13) || ':00:00+00:00' AS bucket, "
         "       r.source, COUNT(*) AS n "
@@ -391,7 +389,7 @@ def render_live():
         "WHERE c.created_at >= ? GROUP BY bucket, r.source ORDER BY bucket",
         (cutoff,))
 
-    # ---- Member 4 --------------------------------------------------------
+    # ---- Sentiment analysis ---------------------------------------------
     sent_ts = q(
         "SELECT entity, time_bucket, post_count, avg_compound, positive_count, "
         "       negative_count, neutral_count, sentiment_shift "
@@ -422,7 +420,7 @@ def render_live():
         "WHERE c.created_at >= ? ORDER BY c.created_at DESC LIMIT 120",
         (cutoff,))
 
-    # ---- PM-owned history -------------------------------------------------
+    # ---- History ---------------------------------------------------------
     hist = db.history_q(
         "SELECT source_updated_at, keyword, burst_score, rank_no "
         "FROM trend_snapshots ORDER BY source_updated_at")
@@ -430,7 +428,7 @@ def render_live():
         "SELECT component, ran_at, rows_in, note FROM run_log "
         "ORDER BY ran_at DESC LIMIT 12")
 
-    # ---- derived component freshness (no heartbeat API exists in M1-M4) ---
+    # ---- Derived component freshness ------------------------------------
     def _ts(sql, is_unix=False):
         v = db.scalar(sql)
         if v is None:
@@ -522,26 +520,73 @@ def render_live():
         curve_col, burst_col = st.columns([1.35, 1])
         with curve_col:
             st.subheader("Sentiment Trend by Entity")
+            st.caption(
+                f"{window_label} query cutoff: `{cutoff}` | "
+                f"{len(sent_ts)} sentiment trend rows in the current selection"
+            )
             if sent_ts.empty:
-                show(empty_fig("No data in sentiment_trends"), 320)
+                fig = go.Figure()
+                fig.add_hrect(y0=-0.05, y1=0.05, fillcolor=config.COLOR_NEUTRAL,
+                              opacity=0.13, line_width=0,
+                              annotation_text="Neutral band", annotation_position="top left")
+                for idx, ent in enumerate(sorted(selected_entities)):
+                    color = config.ENTITY_PALETTE[
+                        idx % len(config.ENTITY_PALETTE)]
+                    fig.add_trace(go.Scatter(
+                        x=[None],
+                        y=[None],
+                        name=ent,
+                        mode="lines+markers",
+                        visible="legendonly",
+                        marker=dict(size=5, color=color),
+                        line=dict(width=2.4, color=color),
+                        hovertemplate="<b>%{fullData.name}</b>"
+                                      "<br>No data in selected window<extra></extra>",
+                    ))
+                fig.add_hline(y=0, line=dict(color="#b6bdc7", width=1, dash="dot"))
+                fig.add_annotation(
+                    text="No data in sentiment_trends",
+                    x=0.5, y=0.5, xref="paper", yref="paper",
+                    showarrow=False,
+                    font=dict(size=14, color="#8a94a3"),
+                )
+                fig.update_layout(**{**PLOT_LAYOUT, "height": 320,
+                                     "yaxis_title": "avg compound",
+                                     "yaxis_range": [-1, 1],
+                                     "xaxis_title": config.DISPLAY_AXIS_LABEL,
+                                     "margin": dict(l=45, r=15, t=45, b=30)})
+                show(fig)
             else:
                 fig = go.Figure()
                 fig.add_hrect(y0=-0.05, y1=0.05, fillcolor=config.COLOR_NEUTRAL,
                               opacity=0.13, line_width=0,
                               annotation_text="Neutral band", annotation_position="top left")
-                for idx, (ent, grp) in enumerate(sent_ts.groupby("entity")):
-                    grp = grp.sort_values("time_bucket")
-                    fig.add_trace(go.Scatter(
-                        x=to_hkt(grp["time_bucket"]),
-                        y=grp["avg_compound"].rolling(3, min_periods=1).mean(),
-                        name=ent, mode="lines+markers",
-                        marker=dict(size=5, color=config.ENTITY_PALETTE[
-                            idx % len(config.ENTITY_PALETTE)]),
-                        line=dict(width=2.4, color=config.ENTITY_PALETTE[
-                            idx % len(config.ENTITY_PALETTE)]),
-                        customdata=grp["post_count"],
-                        hovertemplate="%{fullData.name}: %{y:.3f}"
-                                      "<br>mentions %{customdata}<extra></extra>"))
+                for idx, ent in enumerate(sorted(selected_entities)):
+                    grp = sent_ts[sent_ts["entity"] == ent].sort_values("time_bucket")
+                    color = config.ENTITY_PALETTE[
+                        idx % len(config.ENTITY_PALETTE)]
+                    if grp.empty:
+                        fig.add_trace(go.Scatter(
+                            x=[None],
+                            y=[None],
+                            name=ent,
+                            mode="lines+markers",
+                            visible="legendonly",
+                            marker=dict(size=5, color=color),
+                            line=dict(width=2.4, color=color),
+                            hovertemplate="<b>%{fullData.name}</b>"
+                                          "<br>No data in selected window<extra></extra>",
+                        ))
+                    else:
+                        fig.add_trace(go.Scatter(
+                            x=to_hkt(grp["time_bucket"]),
+                            y=grp["avg_compound"].rolling(3, min_periods=1).mean(),
+                            name=ent, mode="lines+markers",
+                            marker=dict(size=5, color=color),
+                            line=dict(width=2.4, color=color),
+                            customdata=grp["post_count"],
+                            hovertemplate="%{fullData.name}: %{y:.3f}"
+                                          "<br>mentions %{customdata}<extra></extra>"))
                 fig.add_hline(y=0, line=dict(color="#b6bdc7", width=1, dash="dot"))
                 fig.update_layout(**{**PLOT_LAYOUT, "height": 320,
                                      "yaxis_title": "avg compound",
@@ -638,7 +683,7 @@ def render_live():
                                  "yaxis_title": "burst score", "xaxis_title": config.DISPLAY_AXIS_LABEL,
                                  "hovermode": "x unified"})
             show(fig)
-            # Member 3 replaces the whole Top-20 each cycle, so per-word line
+            # The whole Top-20 may be replaced each cycle, so per-word line
             # continuity is NOT guaranteed. Report the real overlap instead.
             if len(agg_hist) >= 2:
                 last_two = agg_hist["source_updated_at"].tail(2).tolist()
@@ -685,7 +730,7 @@ def render_live():
         st.caption("Computed live from `clean_posts.tokens` after stop-word filtering, for reference only; "
                    "**not** the burst score. Current formula: "
                    "`freq(1 h) / (freq(prior 23 h) / 23 + 1)`, i.e. the baseline is converted to an hourly rate; "
-                   "`CS5481_BURST_FORMULA=original` restores the original ratio. "
+                   "`BURST_FORMULA=original` restores the original ratio. "
                    "Top-N and raw counts are written to `trending_keywords` by the detector.")
 
         st.subheader("Keyword Detail")
@@ -883,7 +928,7 @@ def render_live():
             f"The slide suggests `{' / '.join(config.SLIDE_ENTITIES)}`; "
             f"differing entities: {', '.join(mismatch) if mismatch else 'none'}. "
             "This is not an error and does not need changing. To switch, run "
-            "`CS5481_ENTITY_PROFILE=slide python run_pipeline.py --offline`. "
+            "`ENTITY_PROFILE=slide python run_pipeline.py --offline`. "
             "The pipeline will then remove scores for entities no longer tracked. "
             "`entity_registry.py` is the single source shared by the analyzer, the pipeline and this dashboard.",
             icon="ℹ️")
@@ -899,7 +944,7 @@ def render_live():
                  f" {len(__import__('text_quality').STOP_WORDS)} words, shared by cleaning, detection and the dashboard",
                  "text_quality.py / cleaner.py / trend.py"),
                 ("Unequal 1 h / 24 h windows inflated new words",
-                 "Baseline normalised to an hourly rate; CS5481_BURST_FORMULA=original restores the raw ratio",
+                 "Baseline normalised to an hourly rate; BURST_FORMULA=original restores the raw ratio",
                  "trend.py"),
                 ("Single-occurrence words dominated the chart", "Minimum frequency ≥2; a short honest list instead of padded noise",
                  "trend.py"),
@@ -941,7 +986,7 @@ def render_live():
             st.code(ddl or "no tables", language="sql")
 
         p = db.db_path()
-        st.caption(f"DB: `{p}`  ·  {p.stat().st_size/1024:.0f} KB  ·  "
+        st.caption(f"DB: `data/app.db`  ·  {p.stat().st_size/1024:.0f} KB  ·  "
                    f"Last write {db.iso(p.stat().st_mtime)}  ·  opened with mode=ro")
 
 

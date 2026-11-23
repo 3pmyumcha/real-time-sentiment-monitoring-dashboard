@@ -1,10 +1,7 @@
 -- =====================================================================
--- CS5481 Topic 4 | AI Industry Sentiment & Trend Monitoring
--- REAL SQLite contract, reverse-engineered from the four delivered packages.
--- Owner: Member 5 (Dashboard & PM). 11/15/2026
+-- Real SQLite project contract.
 --
 -- This file is DOCUMENTATION + a runnable bootstrap. It is NOT an invented
--- replacement schema: the tables below are exactly what Members 1-4 write.
 -- Executing it on a fresh file gives the same shape as data/app.db.
 -- =====================================================================
 --
@@ -17,19 +14,19 @@
 --   trending_keywords.updated_at  REAL Unix epoch seconds (time.time())
 --
 -- Because ISO strings are fixed-width and always +00:00, lexicographic
--- comparison in SQL equals chronological comparison. Member 3 relies on that.
+-- comparison in SQL equals chronological comparison.
 --
 -- DISPLAY ONLY: the dashboard renders all times in Hong Kong Time (HKT, UTC+8)
 -- via config.DISPLAY_TZ / dashboard.to_hkt() / db.iso(). Nothing in this file
 -- changes: stored values stay UTC, and every SQL window filter stays +00:00.
 --
 -- WRITE OWNERSHIP / LOCKING:
---   SQLite has ONE writer at a time. Members 1-4 are separate processes.
---   run_pipeline.py runs them SEQUENTIALLY to avoid "database is locked".
+--   SQLite has ONE writer at a time.
+--   run_pipeline.py runs pipeline stages sequentially to avoid locking.
 --   The dashboard opens mode=ro and never writes to this file.
 -- =====================================================================
 
--- ---------------------------- Member 1 -> Member 2 ------------------------
+-- ---------------------------- Raw ingestion ------------------------------
 CREATE TABLE IF NOT EXISTS raw_posts (
     post_id      TEXT PRIMARY KEY,
     title        TEXT NOT NULL,
@@ -40,7 +37,7 @@ CREATE TABLE IF NOT EXISTS raw_posts (
     url          TEXT NOT NULL
 );
 
--- ---------------------------- Member 2 ------------------------------------
+-- ---------------------------- Cleaned data -------------------------------
 CREATE TABLE IF NOT EXISTS clean_posts (
     post_id      TEXT PRIMARY KEY REFERENCES raw_posts(post_id),
     title_clean  TEXT NOT NULL,          -- HTML stripped, URL removed, whitespace normalised
@@ -51,18 +48,17 @@ CREATE TABLE IF NOT EXISTS clean_posts (
 );
 CREATE INDEX IF NOT EXISTS idx_clean_created ON clean_posts(created_at);
 
--- ---------------------------- Member 3 ------------------------------------
+-- ---------------------------- Trend snapshot -----------------------------
 -- IMPORTANT: this table is a *current snapshot*, not history.
 -- trend.py DELETEs every row then bulk-inserts Top-20 every 60 seconds.
--- burst_score (PM fix) = freq(last 1h) / (freq(prior 23h)/23 + 1)
+-- burst_score = freq(last 1h) / (freq(prior 23h)/23 + 1)
 --   i.e. the baseline is converted to an hourly RATE before comparison, so a
 --   word seen once for the first time no longer automatically scores 1.0 and
---   outranks genuinely repeated words. CS5481_BURST_FORMULA=original restores
---   Member 3's raw `freq(1h)/(freq(24h)+1)`.
---   Candidates also need freq(last 1h) >= CS5481_MIN_RECENT_COUNT (default 2).
+--   outranks genuinely repeated words. BURST_FORMULA=original restores
+--   the raw `freq(1h)/(freq(24h)+1)`.
+--   Candidates also need freq(last 1h) >= MIN_RECENT_COUNT (default 2).
 --
--- Member 5 (PM) additive fix: persist the raw counts too. The brief asks
--- Member 3 for "hot keyword frequency data", and the dashboard needs them to
+-- Persist the raw counts too. The dashboard uses them to
 -- show an honest sample-size note. trend.py ALTERs an existing 3-column table
 -- automatically, so old databases keep working.
 CREATE TABLE IF NOT EXISTS trending_keywords (
@@ -73,7 +69,7 @@ CREATE TABLE IF NOT EXISTS trending_keywords (
     baseline_count  INTEGER             -- freq in the prior 24 h (excluding last 1 h)
 );
 
--- ---------------------------- Member 4 ------------------------------------
+-- ---------------------------- Sentiment analysis -------------------------
 CREATE TABLE IF NOT EXISTS sentiment_results (
     post_id         TEXT NOT NULL,
     entity          TEXT NOT NULL,
@@ -104,13 +100,11 @@ CREATE INDEX IF NOT EXISTS idx_sentiment_trends_time
     ON sentiment_trends(time_bucket);
 
 -- =====================================================================
--- Member 5 OWNS the following tables in a SEPARATE file
--- (data/member5_history.db), created by db.init_history(). They exist so the
--- dashboard can draw a trend-score *time series* even though Member 3 keeps
--- overwriting its snapshot. The dashboard never writes to the shared DB.
+-- Historical trend snapshots are stored in a separate file
+-- (data/history.db), created by db.init_history().
 -- =====================================================================
 -- CREATE TABLE IF NOT EXISTS trend_snapshots (
---     source_updated_at REAL NOT NULL,   -- Member 3's updated_at (dedupe key)
+--     source_updated_at REAL NOT NULL,
 --     keyword           TEXT NOT NULL,
 --     burst_score       REAL NOT NULL,
 --     rank_no           INTEGER,

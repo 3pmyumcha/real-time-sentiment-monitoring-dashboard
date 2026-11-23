@@ -1,9 +1,4 @@
-"""CS5481 Topic 4 - group-shared configuration (owned by Member 5 / PM).
-
-The authoritative table + column names are NOT invented here: they are whatever
-Members 1-4 actually wrote into data/app.db. See schema.sql for the reverse-
-engineered contract and README_member5.md for the alignment notes.
-"""
+"""Project configuration for storage, entities, trend settings, and display."""
 from __future__ import annotations
 
 import os
@@ -12,22 +7,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 # --- Canonical storage ----------------------------------------------------
-# Every teammate's script is pointed at this one file. Override with CS5481_DB.
-DB_PATH = Path(os.environ.get("CS5481_DB") or (ROOT / "data" / "app.db"))
-# Member 5 owns this second file. It never writes to the shared DB, so the
-# dashboard cannot contend with Members 1-4 for the single SQLite writer lock.
-HISTORY_DB_PATH = ROOT / "data" / "member5_history.db"
+# Every pipeline script is pointed at this one file.
+DB_PATH = Path(os.environ.get("APP_DB") or (ROOT / "data" / "app.db"))
+# This secondary file stores history and never writes to the shared DB.
+HISTORY_DB_PATH = ROOT / "data" / "history.db"
 
 # --- Domain ---------------------------------------------------------------
 DOMAIN_NAME = "AI Industry Sentiment & Trend Monitoring"
 DOMAIN_NOTE = "Hacker News tech discussion; 1 h vs prior 24 h burst detection"
 DATA_SOURCE = "Hacker News public Firebase API (no credentials)"
 
-# --- Tracked entities: ONE source of truth (PM-owned registry) -------------
-# DEFAULT = Member 4's delivered set (group confirmed this is acceptable).
-# The slide's ChatGPT/OpenAI/Claude/Gemini is an OPTIONAL reference profile:
-# CS5481_ENTITY_PROFILE=slide. Member 4's entities.py re-exports this dict,
-# so analyzer / dashboard / orchestrator can never disagree.
+# --- Tracked entities -----------------------------------------------------
 from entity_registry import (              # noqa: E402
     EXPECTED_ENTITIES, PROFILE as ENTITY_PROFILE,
     SLIDE_ENTITIES as SLIDE_ENTITY_MAP,
@@ -40,10 +30,9 @@ SLIDE_ENTITIES = tuple(EXPECTED_ENTITIES)
 # --- Trend-detection quality (documented here, read by trend.py) -----------
 # Default min frequency = 2 in the last hour. It is deliberately NOT relaxed
 # to 1: a short honest keyword list beats 20 one-off words.
-# CS5481_BURST_FORMULA=original restores Member 3's raw 1h/24h ratio.
-TREND_MIN_RECENT_COUNT = int(os.environ.get("CS5481_MIN_RECENT_COUNT", "2"))
-TREND_BURST_FORMULA = os.environ.get("CS5481_BURST_FORMULA", "rate")
-TREND_LOW_SAMPLE_BELOW = 8
+# Set BURST_FORMULA=original to restore the original 1h/24h ratio.
+TREND_MIN_RECENT_COUNT = int(os.environ.get("MIN_RECENT_COUNT", "2"))
+TREND_BURST_FORMULA = os.environ.get("BURST_FORMULA", "rate")
 
 # --- Colors ---------------------------------------------------------------
 # Product sentiment, not price movement: positive = green, negative = red.
@@ -64,7 +53,7 @@ LABEL_COLORS = {
 LABEL_TEXT = {"positive": "Positive", "neutral": "Neutral", "negative": "Negative"}
 
 # --- Display timezone ------------------------------------------------------
-# The shared DB MUST stay in UTC: Members 1-4 write ISO 8601 UTC text and
+# The shared DB MUST stay in UTC: pipeline components write ISO 8601 UTC text and
 # REAL Unix seconds, and the SQL hour filters depend on that fixed format.
 # Only human-facing labels are converted, to Hong Kong Time (HKT, UTC+8,
 # no DST). A fixed offset avoids any tzdata dependency on Windows.
@@ -83,4 +72,4 @@ DEFAULT_WINDOW = "Last 24 h"
 DEFAULT_TOP_N = 20
 BURST_MIN_SCORE = 0.0
 STALE_AFTER_SECONDS = 300        # pipeline components: yellow above, red above 3x
-SHIFT_THRESHOLD = 0.20           # Member 4's constant, mirrored for display only
+SHIFT_THRESHOLD = 0.20

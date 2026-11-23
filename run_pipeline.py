@@ -1,23 +1,22 @@
-"""Member 5 (PM) orchestrator: run Members 1-4 in order against ONE SQLite DB.
+"""Project pipeline orchestrator: run ingestion, cleaning, trend analysis,
+and sentiment analysis against one SQLite database.
 
     python run_pipeline.py --once                    # one full cycle (needs network)
-    python run_pipeline.py --offline                # M3+M4 only, no crawling
+    python run_pipeline.py --offline                # trend + sentiment only
     python run_pipeline.py --watch --interval 60    # continuous near-real-time loop
     python -m streamlit run dashboard.py            # separate terminal
 
-PM integration steps (all additive, none of them changes a teammate's
-scoring formula):
+Pipeline steps:
 
     --reclean      recompute stored tokens with the shared stop-word list
     prune          drop sentiment_results rows for entities no longer tracked
-    snapshot       copy Member 3's current Top-20 into the PM history DB even
-                   when no browser is open
+    snapshot       copy the current Top-20 into the history database
 
-Every module is invoked through its own public API:
+The modules are invoked through their public APIs:
 
-    M1+M2  src.processing.pipeline.run_once()      (collect_data -> clean -> store)
-    M3     trend.run_once()                        (detect + rewrite Top-20)
-    M4     src.sentiment.analyzer.analyze_posts()  (VADER + hourly trends)
+    ingestion + cleaning  src.processing.pipeline.run_once()
+    trend detection       trend.run_once()
+    sentiment analysis    src.sentiment.analyzer.analyze_posts()
 
 SQLite allows one writer at a time, so these steps are SEQUENTIAL by design.
 """
@@ -35,14 +34,14 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-DB_FILE = Path(os.environ.get("CS5481_DB") or (ROOT / "data" / "app.db"))
-os.environ["CS5481_DB"] = str(DB_FILE)
+DB_FILE = Path(os.environ.get("APP_DB") or (ROOT / "data" / "app.db"))
+os.environ["APP_DB"] = str(DB_FILE)
 
 import db                                            # noqa: E402  (after env set)
 
 
 def ensure_db() -> None:
-    """Create the shared DB with Member 2's own DDL if it does not exist."""
+    """Create the shared database with the project DDL if it does not exist."""
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     schema = (ROOT / "src" / "processing" / "schema.sql").read_text(encoding="utf-8")
     conn = sqlite3.connect(str(DB_FILE), timeout=10)
@@ -58,8 +57,8 @@ def ensure_db() -> None:
 def reclean_stored_tokens() -> int:
     """Apply the shared stop-word list to tokens already in clean_posts.
 
-    The 500 delivered posts were cleaned with Member 2's original 18-word
-    list. Without this one-off migration, the noise fix would only affect
+    Existing posts may have been cleaned with an older stop-word list.
+    Without this migration, the noise fix would only affect
     newly crawled posts and the existing chart would stay polluted.
     Uses raw_posts as the source of truth, so it is idempotent.
     """
@@ -77,8 +76,8 @@ def reclean_stored_tokens() -> int:
         with conn:
             conn.executemany(
                 "UPDATE clean_posts SET tokens = ? WHERE post_id = ?", updates)
-        print(f"[PM] re-cleaned tokens for {len(updates)} stored posts")
-        db.log_run("PM re-clean stored tokens", len(updates), "shared stop-list")
+        print(f"[Pipeline] re-cleaned tokens for {len(updates)} stored posts")
+        db.log_run("Pipeline re-clean", len(updates), "shared stop-list")
         return len(updates)
     finally:
         conn.close()
@@ -87,8 +86,7 @@ def reclean_stored_tokens() -> int:
 def prune_stale_entities() -> int:
     """Delete sentiment rows for entities that are no longer tracked.
 
-    Member 4 uses INSERT OR REPLACE and never deletes, so switching the entity
-    profile would otherwise leave Apple/AWS/GitHub/Google rows in the chart.
+    Entity profile switches remove rows for entities no longer tracked.
     """
     import entity_registry
     keep = sorted(entity_registry.TRACKED_ENTITIES)
@@ -111,9 +109,9 @@ def prune_stale_entities() -> int:
                 conn.execute(
                     f"DELETE FROM sentiment_results "
                     f"WHERE entity NOT IN ({placeholders})", keep)
-        print(f"[PM] active profile={entity_registry.PROFILE}, "
+        print(f"[Pipeline] active profile={entity_registry.PROFILE}, "
               f"removed {n} stale entity rows")
-        db.log_run("PM prune stale entities", int(n),
+        db.log_run("Pipeline prune stale entities", int(n),
                    f"profile={entity_registry.PROFILE}")
         return int(n)
     finally:
@@ -126,8 +124,8 @@ def run_ingestion(limit: int, offline: bool) -> int:
         return 0
     from src.processing.pipeline import run_once
     n = run_once(limit=limit)
-    print(f"[1/2] M1+M2: {n} new posts ingested + cleaned")
-    db.log_run("M1+M2 ingestion+cleaning", n, f"limit={limit}")
+    print(f"[Ingestion + cleaning] {n} new posts processed")
+    db.log_run("Ingestion + cleaning", n, f"limit={limit}")
     return int(n or 0)
 
 
@@ -135,8 +133,8 @@ def run_trend() -> int:
     import trend
     trend.run_once()
     n = db.scalar("SELECT COUNT(*) FROM trending_keywords", default=0) or 0
-    print(f"[3/4] M3 trend detection: {n} keywords in trending_keywords")
-    db.log_run("M3 trend detection", int(n), "1h vs prior 24h")
+    print(f"[Trend detection] {n} keywords in trending_keywords")
+    db.log_run("Trend detection", int(n), "1h vs prior 24h")
     return int(n)
 
 
@@ -145,8 +143,8 @@ def run_sentiment() -> int:
     posts = load_posts(DB_FILE)
     n = analyze_posts(DB_FILE, posts)
     nt = db.scalar("SELECT COUNT(*) FROM sentiment_trends", default=0) or 0
-    print(f"[4/4] M4 VADER: {n} entity mentions, {nt} hourly trend buckets")
-    db.log_run("M4 sentiment analysis", int(n), f"{nt} hourly buckets")
+    print(f"[Sentiment] {n} entity mentions, {nt} hourly trend buckets")
+    db.log_run("Sentiment analysis", int(n), f"{nt} hourly buckets")
     return int(n)
 
 
@@ -158,33 +156,33 @@ def cycle(limit: int, offline: bool, reclean: bool = False) -> None:
         # A network/API failure must not stop trend + sentiment from refreshing.
         print(f"[1/2] ingestion failed (continuing with stored data): "
               f"{type(exc).__name__}: {exc}", file=sys.stderr)
-        db.log_run("M1+M2 ingestion+cleaning", 0, f"FAILED: {exc}"[:200])
+        db.log_run("Ingestion + cleaning", 0, f"FAILED: {exc}"[:200])
     if reclean:
         try:
             reclean_stored_tokens()
         except Exception as exc:                    # noqa: BLE001
-            print(f"[PM] re-clean failed: {exc}", file=sys.stderr)
+            print(f"[Pipeline] re-clean failed: {exc}", file=sys.stderr)
     try:
         prune_stale_entities()
     except Exception as exc:                        # noqa: BLE001
-        print(f"[PM] entity prune failed: {exc}", file=sys.stderr)
+        print(f"[Pipeline] entity prune failed: {exc}", file=sys.stderr)
     try:
         run_trend()
     except Exception as exc:                        # noqa: BLE001
-        print(f"[3/4] trend failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-        db.log_run("M3 trend detection", 0, f"FAILED: {exc}"[:200])
+        print(f"[Trend] failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        db.log_run("Trend detection", 0, f"FAILED: {exc}"[:200])
     try:
         run_sentiment()
     except Exception as exc:                        # noqa: BLE001
-        print(f"[4/4] sentiment failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-        db.log_run("M4 sentiment analysis", 0, f"FAILED: {exc}"[:200])
-    # PM history must keep growing even when the browser tab is closed.
+        print(f"[Sentiment] failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        db.log_run("Sentiment analysis", 0, f"FAILED: {exc}"[:200])
+    # Keep history growing even when the browser tab is closed.
     try:
         n = db.record_snapshot()
         if n:
-            print(f"[PM] recorded {n} keyword rows into member5_history.db")
+            print(f"[Pipeline] recorded {n} keyword rows into history.db")
     except Exception as exc:                        # noqa: BLE001
-        print(f"[PM] snapshot failed: {exc}", file=sys.stderr)
+        print(f"[History] snapshot failed: {exc}", file=sys.stderr)
     print(f"[done] DB = {DB_FILE}")
 
 
@@ -195,9 +193,9 @@ def main() -> int:
     ap.add_argument("--interval", type=float, default=60.0,
                     help="seconds between cycles in --watch mode")
     ap.add_argument("--limit", type=int, default=50,
-                    help="M1 fetch size per cycle (1..500, keep small to avoid rate limits)")
+                    help="Fetch size per cycle (1..500, keep small to avoid rate limits)")
     ap.add_argument("--offline", action="store_true",
-                    help="skip M1/M2 crawling, recompute M3+M4 from stored posts")
+                    help="skip crawling, recompute trends and sentiment from stored posts")
     ap.add_argument("--reclean", action="store_true",
                     help="one-off migration: re-tokenise stored posts with the shared stop-word list")
     args = ap.parse_args()

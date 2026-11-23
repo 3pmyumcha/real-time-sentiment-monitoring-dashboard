@@ -1,4 +1,4 @@
-# CS5481 Topic 4 — Real-Time Sentiment and Trend Monitoring
+# Real-Time Sentiment and Trend Monitoring Dashboard
 
 This project implements a near-real-time data engineering pipeline for monitoring
 technology discussions on Hacker News. It continuously collects posts, cleans
@@ -63,7 +63,7 @@ The project dashboard uses a read-only connection to `data/app.db`. Historical
 trend snapshots and pipeline run records are stored separately in:
 
 ```text
-data/member5_history.db
+data/history.db
 ```
 
 Database timestamps remain in UTC. The dashboard converts timestamps to Hong
@@ -74,7 +74,7 @@ Kong Time only for display.
 Using Anaconda `base`:
 
 ```powershell
-cd "CS5481_Topic4"
+cd "project"
 python -m pip install -r requirements.txt
 ```
 
@@ -142,7 +142,7 @@ recent hourly rate / (baseline hourly rate + 1)
 Set the following environment variable to restore the original ratio formula:
 
 ```powershell
-$env:CS5481_BURST_FORMULA="original"
+$env:BURST_FORMULA="original"
 ```
 
 ## Sentiment Analysis
@@ -193,7 +193,7 @@ Gemini
 Switch profiles with:
 
 ```powershell
-$env:CS5481_ENTITY_PROFILE="slide"
+$env:ENTITY_PROFILE="slide"
 python run_pipeline.py --offline
 ```
 
@@ -213,6 +213,20 @@ data/entity_overrides.json
 Entity matching is case-insensitive and uses regular-expression word boundaries.
 The entity name itself is always included as an alias. A clear, specific alias
 list helps prevent false matches.
+
+The current LLM-related alias set includes company names and product/model
+names, for example:
+
+```text
+OpenAI: ChatGPT, GPT-4o, GPT-5, o1, o3, Sora
+Anthropic: Claude, Claude 3.5, Claude Opus, Claude Haiku
+Google/Gemini: Gemini, Gemini 2.5, Google Bard, Google DeepMind
+Microsoft: Microsoft, Azure, Copilot, Windows
+Meta: Meta AI, Llama, Llama 3, Llama 4
+Mistral: Mistral, Mixtral, Codestral
+xAI: Grok, Grok 2, Grok 3
+NVIDIA: NVIDIA, CUDA, GeForce, RTX
+```
 
 ## Dashboard
 
@@ -240,11 +254,11 @@ filters and the selected tab remain unchanged.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CS5481_DB` | `data/app.db` | Shared SQLite database path |
-| `CS5481_ENTITY_PROFILE` | `member` | `member` or `slide` entity profile |
-| `CS5481_BURST_FORMULA` | `rate` | `rate` or `original` burst formula |
-| `CS5481_MIN_RECENT_COUNT` | `2` | Minimum recent word frequency |
-| `CS5481_MIN_KEYWORDS` | `8` | Minimum keyword sample for the dashboard |
+| `APP_DB` | `data/app.db` | Shared SQLite database path |
+| `ENTITY_PROFILE` | `default` | `default` or `slide` entity profile |
+| `BURST_FORMULA` | `rate` | `rate` or `original` burst formula |
+| `MIN_RECENT_COUNT` | `2` | Minimum recent word frequency |
+| `MIN_KEYWORDS` | `8` | Minimum keyword sample for the dashboard |
 
 ## Testing
 

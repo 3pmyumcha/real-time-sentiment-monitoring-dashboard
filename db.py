@@ -1,16 +1,15 @@
-"""Member 5 read layer over the REAL shared SQLite database (data/app.db).
+"""Read layer over the shared SQLite database (data/app.db).
 
 Design rules
 ------------
 * The dashboard opens the shared DB with ``mode=ro``. It never writes there,
-  so it cannot contend with Members 1-4 for SQLite's single writer lock.
+  so it cannot contend with the pipeline for SQLite's single writer lock.
 * Anything the dashboard needs to remember (trend snapshot history, KPI
-  history, pipeline run log) goes into a separate PM-owned file
-  ``data/member5_history.db`` with WAL + busy_timeout.
+  history, pipeline run log) goes into a separate history file
+  ``data/history.db`` with WAL + busy_timeout.
 * Every query is tolerant of a missing table / missing DB: the dashboard must
-  degrade to a helpful hint, never crash, while teammates are still wiring up.
 * Time anchoring uses ``MAX(clean_posts.created_at)`` as "data now", exactly
-  like Member 3's detector. Using the wall clock would make a static snapshot
+  like the trend detector. Using the wall clock would make a static snapshot
   look empty (the shipped data ends about 3 hours before the current time).
 
 Time formats actually used by the team (all UTC):
@@ -33,7 +32,7 @@ import pandas as pd
 
 import config
 
-# Tables the four teammates write. Used for the ops tab and graceful checks.
+# Tables written by the pipeline. Used for status and graceful checks.
 SHARED_TABLES = (
     "raw_posts", "clean_posts", "trending_keywords",
     "sentiment_results", "sentiment_trends",
@@ -163,7 +162,7 @@ def utc_now() -> float:
     return time.time()
 
 
-# --------------------------------------------------- PM-owned history store
+# --------------------------------------------------- History store
 def init_history() -> None:
     p = history_path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -229,10 +228,10 @@ def history_q(sql: str, params=()) -> pd.DataFrame:
 
 
 def record_snapshot() -> int:
-    """Copy one Member-3 trend snapshot into PM history, deduped by updated_at.
+    """Copy the latest trend snapshot into history, deduplicated by updated_at.
 
-    Member 3 DELETEs and rewrites trending_keywords every 60 s, so without this
-    the dashboard can only show the current Top-20 and has no time series at all.
+    The current trend table is rewritten each cycle, so this preserves
+    a separate time series for the dashboard.
     Returns the number of keyword rows inserted (0 when already recorded).
     """
     stamp = scalar("SELECT MAX(updated_at) FROM trending_keywords")
@@ -293,7 +292,7 @@ def log_run(component: str, rows_in: int = 0, note: str = "") -> None:
 
 if __name__ == "__main__":
     init_history()
-    print("shared DB :", db_path(), "exists=", db_path().exists())
-    print("PM history:", history_path(), "exists=", history_path().exists())
+    print("shared DB:", db_path(), "exists=", db_path().exists())
+    print("history DB:", history_path(), "exists=", history_path().exists())
     print(table_counts().to_string(index=False))
     print("data clock:", data_clock())

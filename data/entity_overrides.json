@@ -2,35 +2,101 @@
   "entities": {
     "AWS": [
       "aws",
-      "amazon web services"
+      "amazon web services",
+      "amazon bedrock",
+      "aws bedrock"
     ],
     "Apple": [
       "apple",
       "iphone",
       "ios",
-      "mac"
+      "mac",
+      "macbook",
+      "siri"
     ],
     "GitHub": [
       "github",
-      "git hub"
+      "git hub",
+      "github copilot",
+      "copilot"
     ],
     "Google": [
       "google",
       "android",
-      "pixel"
+      "pixel",
+      "google ai",
+      "google cloud"
     ],
     "Microsoft": [
-      "msft"
+      "microsoft",
+      "msft",
+      "azure",
+      "windows",
+      "github copilot",
+      "copilot"
     ],
     "NVIDIA": [
-      "nvda"
+      "nvidia",
+      "nvda",
+      "cuda",
+      "geforce",
+      "rtx"
     ],
     "OpenAI": [
       "openai",
-      "chatgpt"
+      "open ai",
+      "chatgpt",
+      "gpt-4",
+      "gpt-4o",
+      "gpt-4.1",
+      "gpt-5",
+      "o1",
+      "o3",
+      "sora",
+      "sam altman"
     ],
-    "anthropic": [
-      "ant"
+    "Anthropic": [
+      "anthropic",
+      "claude",
+      "claude 3",
+      "claude 3.5",
+      "claude 3.7",
+      "claude sonnet",
+      "claude opus",
+      "claude haiku"
+    ],
+    "Gemini": [
+      "gemini",
+      "gemini 1.5",
+      "gemini 2.0",
+      "gemini 2.5",
+      "google gemini",
+      "google bard",
+      "bard",
+      "deepmind"
+    ],
+    "Meta": [
+      "meta",
+      "meta ai",
+      "llama",
+      "llama 2",
+      "llama 3",
+      "llama 4"
+    ],
+    "Mistral": [
+      "mistral",
+      "mistral ai",
+      "mixtral",
+      "mistral large",
+      "mistral small",
+      "codestral"
+    ],
+    "xAI": [
+      "xai",
+      "x.ai",
+      "grok",
+      "grok 2",
+      "grok 3"
     ]
   }
 }

@@ -1,11 +1,10 @@
-"""Shared English stop-word list. Owner: Member 5 (PM).
+"""Shared English stop-word list.
 
 Why this file exists
 --------------------
-Member 2's cleaner.py shipped an 18-word stop list, so `will / give / though /
-remains / with / use` kept topping the "trending keywords" chart. Member 3
-counts whatever is in `clean_posts.tokens`, so a weak stop list directly
-poisons burst detection.
+The stop-word list keeps common and project-specific noise from dominating
+the trend chart. Trend detection counts tokens in `clean_posts`, so the
+cleaning and counting components use the same filter.
 
 This module is the single, explicit stop list used by THREE places so the
 cleaning and the counting agree:

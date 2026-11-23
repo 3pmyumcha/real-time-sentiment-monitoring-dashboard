@@ -15,11 +15,9 @@ from .entities import TRACKED_ENTITIES
 
 import os
 LOG = logging.getLogger(__name__)
-# Member 5 (PM) integration: honour the shared env var, otherwise use the
-# canonical workspace DB. Member 4's original default pointed at a "Member3"
-# folder that does not exist in the merged project layout.
+# Honour the shared database environment variable.
 DEFAULT_DB_PATH = Path(
-    os.environ.get("CS5481_DB")
+    os.environ.get("APP_DB")
     or (Path(__file__).resolve().parents[2] / "data" / "app.db")
 )
 SHIFT_THRESHOLD = 0.20
@@ -75,7 +73,7 @@ def _parse_utc(value: str) -> datetime:
 
 
 def load_posts(db_path: Path, limit: Optional[int] = None) -> List[dict]:
-    """Load cleaned posts using the Member 2 clean_posts schema."""
+    """Load cleaned posts from the project database."""
     query = (
         "SELECT post_id, title_clean, text_clean, created_at "
         "FROM clean_posts ORDER BY created_at DESC"

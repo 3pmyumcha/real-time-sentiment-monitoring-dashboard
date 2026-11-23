@@ -1,4 +1,4 @@
-"""Tracked entities and their common aliases (Member 4's public interface).
+"""Tracked entities and their common aliases.
 
 The inline fallback keeps this module importable even when the workspace root
 is not on sys.path (e.g. someone runs the file in isolation).
