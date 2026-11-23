@@ -1,0 +1,19 @@
+# CS5481 Topic 4 - merged requirements for all five members.
+# Verified installed on Python 3.13 / Windows.
+
+# Member 1 - Hacker News ingestion (public Firebase API)
+requests>=2.31,<3
+
+# Member 2 - cleaning + SQLite: standard library only (sqlite3, re, html, json)
+
+# Member 3 - burst detection: standard library only (collections, datetime)
+
+# Member 4 - VADER sentiment
+vaderSentiment>=3.3.2,<4
+
+# Member 5 - auto-refreshing dashboard
+streamlit>=1.37      # st.fragment(run_every=...) drives auto-refresh
+plotly>=5.18
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14          # required by st.dataframe in recent Streamlit

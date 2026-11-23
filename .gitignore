@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.streamlit/
+*.db-shm
+*.db-wal
+*.db-journal

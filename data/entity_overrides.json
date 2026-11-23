@@ -1,0 +1,36 @@
+{
+  "entities": {
+    "AWS": [
+      "aws",
+      "amazon web services"
+    ],
+    "Apple": [
+      "apple",
+      "iphone",
+      "ios",
+      "mac"
+    ],
+    "GitHub": [
+      "github",
+      "git hub"
+    ],
+    "Google": [
+      "google",
+      "android",
+      "pixel"
+    ],
+    "Microsoft": [
+      "msft"
+    ],
+    "NVIDIA": [
+      "nvda"
+    ],
+    "OpenAI": [
+      "openai",
+      "chatgpt"
+    ],
+    "anthropic": [
+      "ant"
+    ]
+  }
+}
